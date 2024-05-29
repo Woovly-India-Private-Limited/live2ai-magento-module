@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<widgets xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Widget:etc/widget.xsd">
+    <widget id="live2_widget" class="Live2\Live2\Block\Widget\Live2Widget" is_email_compatible="true" placeholder_image="Magento_Catalog::images/product_widget_product_image.png">
+        <label translate="true">Live2 Widget</label>
+        <description translate="true">Display custom content on frontend</description>
+        <parameters>
+            <parameter name="embed_id" xsi:type="text" visible="true" required="true">
+                <label>Embed Id</label>
+            </parameter>
+             <parameter name="team_id" xsi:type="text" visible="true" required="true">
+                <label>Team Id</label>
+            </parameter>
+		</parameters>
+    </widget>
+</widgets>
+
