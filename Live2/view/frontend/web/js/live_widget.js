@@ -9,7 +9,7 @@ define(['jquery'], function($) {
         window.Live2.config.environment = 'production';
 
         var script = document.createElement('script');
-        script.src = 'https://storage.googleapis.com/uploads-live2ai-dev/assets/sdk/dev/live2ai-embed-sdk.js?v=3';
+        script.src = 'https://cdn.live2.ai/assets/sdk/latest/live2ai-embed-sdk.js';
         script.async = true;
         document.body.appendChild(script);
     };
