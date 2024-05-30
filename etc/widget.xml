@@ -7,10 +7,6 @@
             <parameter name="embed_id" xsi:type="text" visible="true" required="true">
                 <label>Embed Id</label>
             </parameter>
-             <parameter name="team_id" xsi:type="text" visible="true" required="true">
-                <label>Team Id</label>
-            </parameter>
 		</parameters>
     </widget>
 </widgets>
-
