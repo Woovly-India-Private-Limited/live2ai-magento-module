@@ -9,6 +9,7 @@ use Psr\Log\LoggerInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
+use Magento\CatalogInventory\Api\StockRegistryInterface;
 
 class CatalogProductImportBunchSaveAfter implements ObserverInterface
 {
@@ -17,19 +18,22 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
     protected $productRepository;
     protected $searchCriteriaBuilder;
     protected $live2Api;
+    protected $stockRegistry;
 
     public function __construct(
         LoggerInterface $logger,
         StoreManagerInterface $storeManager,
         ProductRepositoryInterface $productRepository,
         SearchCriteriaBuilder $searchCriteriaBuilder,
-        Live2ApiCall $live2Api
+        Live2ApiCall $live2Api,
+        StockRegistryInterface $stockRegistry
     ) {
         $this->logger = $logger;
         $this->storeManager = $storeManager;
         $this->productRepository = $productRepository;
         $this->searchCriteriaBuilder = $searchCriteriaBuilder;
         $this->live2Api=$live2Api;
+        $this->stockRegistry = $stockRegistry;
     }
 
     public function execute(Observer $observer)
@@ -84,7 +88,14 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
         $productDataArray = [];
 
         foreach ($productList->getItems() as $product) {
-            $productDataArray[] = $product->getData();
+            // Get the stock information using StockRegistryInterface
+            $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
+            $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
+        
+            $productData = $product->getData();
+            $productData['quantity_and_stock_status'] = $isInStock ? true : false;
+
+            $productDataArray[] = $productData;
         }
         return $productDataArray;
     }

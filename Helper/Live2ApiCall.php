@@ -42,8 +42,41 @@ class Live2ApiCall
         $storeId = $this->storeManager->getStore()->getId();
         $baseUrlMedia = $this->storeManager->getStore($storeId)->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_MEDIA);
         $storeUrl = $this->storeManager->getStore($storeId)->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_WEB);
-        $result['baseUrlMedia']=$baseUrlMedia;
-        $result['storeUrl']=$storeUrl;
+        $store = $this->storeManager->getStore($storeId);
+        // Get store name
+        $storeName = $store->getName();
+
+        // Get store code (the unique identifier of the store)
+        $storeCode = $store->getCode();
+
+        // Get store's default language
+        $storeLocale = $store->getLocale();
+
+        // Get store's timezone
+        $storeTimezone = $store->getConfig('general/locale/timezone');
+
+        // Get store's currency
+        $storeCurrency = $store->getBaseCurrencyCode();
+
+        $this->logger->info('hello world store manager details', [
+            'baseUrlMedia' => $baseUrlMedia,
+            'storeUrl' => $storeUrl,
+            'name' => $storeName,
+            'code' => $storeCode,
+            'locale' => $storeLocale,
+            'currency' => $storeCurrency,
+            'timezone' => $storeTimezone
+
+        ]);
+
+        $result = [
+            'baseUrlMedia' => $baseUrlMedia,
+            'storeUrl' => $storeUrl,
+            'name' => $storeName,
+            'currency' => $storeCurrency,
+        ];
+        // $result['baseUrlMedia']=$baseUrlMedia;
+        // $result['storeUrl']=$storeUrl;
         return $result ;
     }
 

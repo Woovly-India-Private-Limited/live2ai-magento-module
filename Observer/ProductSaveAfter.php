@@ -8,6 +8,7 @@ use Psr\Log\LoggerInterface;
 use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Store\Model\StoreManagerInterface;
+use Magento\CatalogInventory\Api\StockRegistryInterface;
 
 class ProductSaveAfter implements ObserverInterface  {
 
@@ -16,19 +17,22 @@ class ProductSaveAfter implements ObserverInterface  {
     protected $searchCriteriaBuilder;
     protected $storeManager;
     protected $live2Api;
+    protected $stockRegistry;
 
     public function __construct(
         LoggerInterface $logger,
         ProductRepositoryInterface $productRepository,
         SearchCriteriaBuilder $searchCriteriaBuilder,
         StoreManagerInterface $storeManager,
-        Live2ApiCall $live2Api
+        Live2ApiCall $live2Api, 
+        StockRegistryInterface $stockRegistry
     ) {
         $this->logger = $logger;
         $this->productRepository = $productRepository;
         $this->searchCriteriaBuilder = $searchCriteriaBuilder;
         $this->storeManager = $storeManager;
         $this->live2Api = $live2Api;
+        $this->stockRegistry = $stockRegistry;
     }
 
     public function execute( Observer $observer ) {
@@ -45,7 +49,13 @@ class ProductSaveAfter implements ObserverInterface  {
             $productList = $this->productRepository->getList( $searchCriteria );
             $productData = [];
             foreach ( $productList->getItems() as $data ) {
-                $productData[] = $data->getData();
+                $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
+                $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
+            
+                $product = $product->getData();
+                $product['quantity_and_stock_status'] = $isInStock ? true : false;
+
+                $productData[] = $product;
             }
             $productDataArray = [
                 'shopUrl' => $storeDetails[ 'storeUrl' ],
