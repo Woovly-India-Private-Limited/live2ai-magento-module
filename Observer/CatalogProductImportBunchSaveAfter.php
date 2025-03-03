@@ -91,9 +91,10 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
             // Get the stock information using StockRegistryInterface
             $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
             $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
+            $stockQty = $stockItem->getQty() > 0 ? true : false;
         
             $productData = $product->getData();
-            $productData['quantity_and_stock_status'] = $isInStock ? true : false;
+            $productData['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
 
             $productDataArray[] = $productData;
         }

@@ -51,9 +51,10 @@ class ProductSaveAfter implements ObserverInterface  {
             foreach ( $productList->getItems() as $data ) {
                 $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
                 $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
-            
+                $stockQty = $stockItem->getQty() > 0 ? true : false;
+
                 $product = $product->getData();
-                $product['quantity_and_stock_status'] = $isInStock ? true : false;
+                $product['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
 
                 $productData[] = $product;
             }
