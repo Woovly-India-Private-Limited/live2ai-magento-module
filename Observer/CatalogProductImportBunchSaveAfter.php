@@ -83,11 +83,17 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
 
     protected function fetchProductData($SKUs)
     {
-        $searchCriteria = $this->searchCriteriaBuilder->setPageSize(5)->addFilter('sku', $SKUs, 'in')->create();
+
+        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+        $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+
+        $searchCriteria = $this->searchCriteriaBuilder->addFilter('sku', $SKUs, 'in')->create();
         $productList = $this->productRepository->getList($searchCriteria);
         $productDataArray = [];
 
         foreach ($productList->getItems() as $product) {
+            $typeInstance = $product->getTypeInstance();
+
             // Get the stock information using StockRegistryInterface
             $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
             $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
@@ -95,6 +101,34 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
         
             $productData = $product->getData();
             $productData['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
+            
+            $variants = [];
+            $attribute = [];
+            // Check if the product is configurable
+            if ($product->getTypeId() === 'configurable') {
+                $childProducts = $configurableProductModel->getUsedProducts($product);
+            
+                $attribute = $typeInstance->getConfigurableAttributesAsArray($product);
+
+                $price = 0;
+
+                foreach ($childProducts as $childProduct) {
+                    $childStockItem = $this->stockRegistry->getStockItemBySku($childProduct->getSku());
+                    $childIsInStock = $childStockItem->getIsInStock();
+                    $childStockQty = $childStockItem->getQty() > 0 ? true : false;
+
+                    $price = $price !== 0 ? $price : $childProduct->getPrice();
+
+                    $variant = $childProduct->getData();
+                    $variant['quantity_and_stock_status'] = $childIsInStock && $childStockQty ? true : false;
+
+                    $variants[] = $variant;
+                }
+                $productData['price'] = $price;
+            }
+
+            $productData['variants'] = $variants;
+            $productData['options'] = $attribute;
 
             $productDataArray[] = $productData;
         }

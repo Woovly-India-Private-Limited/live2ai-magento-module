@@ -38,6 +38,10 @@ class ProductSaveAfter implements ObserverInterface  {
     public function execute( Observer $observer ) {
 
         try {
+
+            $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+            $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+
             $product = $observer->getEvent()->getProduct();
             $storeId = $this->storeManager->getStore()->getId();
             $baseUrlMedia = $this->storeManager->getStore( $storeId )->getBaseUrl( \Magento\Framework\UrlInterface::URL_TYPE_MEDIA );
@@ -49,20 +53,50 @@ class ProductSaveAfter implements ObserverInterface  {
             $productList = $this->productRepository->getList( $searchCriteria );
             $productData = [];
             foreach ( $productList->getItems() as $data ) {
-                $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
+                $typeInstance = $data->getTypeInstance();
+
+                $stockItem = $this->stockRegistry->getStockItemBySku($data->getSku());
                 $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
                 $stockQty = $stockItem->getQty() > 0 ? true : false;
 
-                $product = $product->getData();
-                $product['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
+                $products = $data->getData();
+                $products['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
 
-                $productData[] = $product;
+                $variants = [];
+                $attribute = [];
+                // Check if the product is configurable
+                if ($product->getTypeId() === 'configurable') {
+                    $childProducts = $configurableProductModel->getUsedProducts($product);
+                
+                    $attribute = $typeInstance->getConfigurableAttributesAsArray($product);
+
+                    $price = 0;
+
+                    foreach ($childProducts as $childProduct) {
+                        $childStockItem = $this->stockRegistry->getStockItemBySku($childProduct->getSku());
+                        $childIsInStock = $childStockItem->getIsInStock();
+                        $childStockQty = $childStockItem->getQty() > 0 ? true : false;
+
+                        $price = $price !== 0 ? $price : $childProduct->getPrice();
+
+                        $variant = $childProduct->getData();
+                        $variant['quantity_and_stock_status'] = $childIsInStock && $childStockQty ? true : false;
+
+                        $variants[] = $variant;
+                    }
+                    $products['price'] = $price;
+                }
+
+                $products['variants'] = $variants;
+                $products['options'] = $attribute;
+
+                $productData[] = $products;
             }
             $productDataArray = [
                 'shopUrl' => $storeDetails[ 'storeUrl' ],
                 'currency' => '',
                 'desc' => '',
-                'shopName' => $storeDetails[ 'storeUrl' ],
+                'shopName' => $storeDetails[ 'name' ],
                 'baseUrl' => $storeDetails[ 'baseUrlMedia' ].'catalog/product',
                 'products' => $productData
             ];

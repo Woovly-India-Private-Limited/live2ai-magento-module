@@ -127,17 +127,51 @@ class ProductSyncCommand extends Command
 
     protected function fetchProductData($searchCriteriaBuilder, $productRepository, $stockRegistry)
     {
-        $searchCriteria = $searchCriteriaBuilder->setPageSize(5)->create();
+        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+        $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+
+        $searchCriteria = $searchCriteriaBuilder->create();
         $productList = $productRepository->getList($searchCriteria);
         $productDataArray = [];
         foreach ($productList->getItems() as $product) {
+            $typeInstance = $product->getTypeInstance();
+            $this->logger->info("product details are ", ['response' => $product->getData()]);
 
              // Get the stock information using StockRegistryInterface
             $stockItem = $stockRegistry->getStockItemBySku($product->getSku());
             $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
+            $stockQty = $stockItem->getQty() > 0 ? true : false;
         
             $productData = $product->getData();
-            $productData['quantity_and_stock_status'] = $isInStock ? true : false;
+            $productData['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
+
+            $variants = [];
+            $attribute = [];
+            // Check if the product is configurable
+            if ($product->getTypeId() === 'configurable') {
+                $childProducts = $configurableProductModel->getUsedProducts($product);
+            
+                $attribute = $typeInstance->getConfigurableAttributesAsArray($product);
+
+                $price = 0;
+
+                foreach ($childProducts as $childProduct) {
+                    $childStockItem = $stockRegistry->getStockItemBySku($childProduct->getSku());
+                    $childIsInStock = $childStockItem->getIsInStock();
+                    $childStockQty = $childStockItem->getQty() > 0 ? true : false;
+
+                    $price = $price !== 0 ? $price : $childProduct->getPrice();
+
+                    $variant = $childProduct->getData();
+                    $variant['quantity_and_stock_status'] = $childIsInStock && $childStockQty ? true : false;
+
+                    $variants[] = $variant;
+                }
+                $productData['price'] = $price;
+            }
+
+            $productData['variants'] = $variants;
+            $productData['options'] = $attribute;
 
             $productDataArray[] = $productData;
 

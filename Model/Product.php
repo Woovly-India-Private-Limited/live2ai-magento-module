@@ -38,6 +38,9 @@ class Product implements ProductInterface
 
     public function getProducts(SearchCriteriaInterface $searchCriteria)
     {
+        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+        $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+
         $headers = $this->request->getHeader("Authorization");
         $baseUrlMedia = $this->storeManager->getStore()->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_MEDIA);
         $storeUrl = $this->storeManager->getStore()->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_WEB);
@@ -47,6 +50,8 @@ class Product implements ProductInterface
         $storeDetails=$this->live2Api->getStoreDetails();
         $productDataArray = [];
         foreach ($products->getItems() as $product) {
+            $typeInstance = $product->getTypeInstance();
+
             // Get the stock information using StockRegistryInterface
             $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
             $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
@@ -54,6 +59,35 @@ class Product implements ProductInterface
 
             $productData = $product->getData();
             $productData['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
+
+
+            $variants = [];
+            $attribute = [];
+            // Check if the product is configurable
+            if ($product->getTypeId() === 'configurable') {
+                $childProducts = $configurableProductModel->getUsedProducts($product);
+            
+                $attribute = $typeInstance->getConfigurableAttributesAsArray($product);
+
+                $price = 0;
+
+                foreach ($childProducts as $childProduct) {
+                    $childStockItem = $this->stockRegistry->getStockItemBySku($childProduct->getSku());
+                    $childIsInStock = $childStockItem->getIsInStock();
+                    $childStockQty = $childStockItem->getQty() > 0 ? true : false;
+
+                    $price = $price !== 0 ? $price : $childProduct->getPrice();
+
+                    $variant = $childProduct->getData();
+                    $variant['quantity_and_stock_status'] = $childIsInStock && $childStockQty ? true : false;
+
+                    $variants[] = $variant;
+                }
+                $productData['price'] = $price;
+            }
+
+            $productData['variants'] = $variants;
+            $productData['options'] = $attribute;
 
             $productDataArray[] = $productData;
         }
