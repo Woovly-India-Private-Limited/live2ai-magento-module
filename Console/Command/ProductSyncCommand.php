@@ -129,11 +129,17 @@ class ProductSyncCommand extends Command
     {
         $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
         $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+        $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
+        $storeId = $storeManager->getDefaultStoreView()->getId(); // Get the default store ID
+
+        // Set the store filter using addFilter
+        $searchCriteriaBuilder->addFilter('store_id', $storeId, 'eq'); // Filter by store ID
 
         $searchCriteria = $searchCriteriaBuilder->create();
         $productList = $productRepository->getList($searchCriteria);
         $productDataArray = [];
         foreach ($productList->getItems() as $product) {
+            $product->setStoreId($storeId);
             $typeInstance = $product->getTypeInstance();
             $this->logger->info("product details are ", ['response' => $product->getData()]);
 
@@ -144,6 +150,7 @@ class ProductSyncCommand extends Command
         
             $productData = $product->getData();
             $productData['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
+            
 
             $variants = [];
             $attribute = [];

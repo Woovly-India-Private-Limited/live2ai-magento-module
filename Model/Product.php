@@ -41,6 +41,11 @@ class Product implements ProductInterface
         $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
         $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
 
+        // Get the default store ID using the StoreManager
+        $storeId = $this->storeManager->getStore()->getId(); // Get the current store ID
+
+        $searchCriteria->addFilter('store_id', $storeId, 'eq'); // Filter products by store ID
+
         $headers = $this->request->getHeader("Authorization");
         $baseUrlMedia = $this->storeManager->getStore()->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_MEDIA);
         $storeUrl = $this->storeManager->getStore()->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_WEB);

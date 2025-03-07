@@ -41,6 +41,9 @@ class ProductSaveAfter implements ObserverInterface  {
 
             $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
             $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+            $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
+            $storeId = $storeManager->getDefaultStoreView()->getId(); // Get the default store ID
+
 
             $product = $observer->getEvent()->getProduct();
             $storeId = $this->storeManager->getStore()->getId();
@@ -49,10 +52,11 @@ class ProductSaveAfter implements ObserverInterface  {
             $live2Details = $this->live2Api->getAccessToken();
             $storeDetails = $this->live2Api->getStoreDetails();
             $this->logger->info( 'outputDataLIVE2' . json_encode( $storeDetails ) );
-            $searchCriteria = $this->searchCriteriaBuilder->addFilter( 'sku', [ $product->getSku() ], 'in' )->create();
+            $searchCriteria = $this->searchCriteriaBuilder->addFilter( 'sku', [ $product->getSku() ], 'in' )->addFilter('store_id', $storeId, 'eq')->create();
             $productList = $this->productRepository->getList( $searchCriteria );
             $productData = [];
             foreach ( $productList->getItems() as $data ) {
+                $product->setStoreId($storeId);
                 $typeInstance = $data->getTypeInstance();
 
                 $stockItem = $this->stockRegistry->getStockItemBySku($data->getSku());
@@ -84,7 +88,7 @@ class ProductSaveAfter implements ObserverInterface  {
 
                         $variants[] = $variant;
                     }
-                    $products['price'] = $price;
+                    $productData['price'] = $price;
                 }
 
                 $products['variants'] = $variants;

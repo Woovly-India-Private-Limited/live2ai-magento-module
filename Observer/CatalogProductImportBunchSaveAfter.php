@@ -86,12 +86,15 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
 
         $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
         $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+        $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
+        $storeId = $storeManager->getDefaultStoreView()->getId(); // Get the default store ID
 
-        $searchCriteria = $this->searchCriteriaBuilder->addFilter('sku', $SKUs, 'in')->create();
+        $searchCriteria = $this->searchCriteriaBuilder->addFilter('sku', $SKUs, 'in')->addFilter('store_id', $storeId, 'eq')->create();
         $productList = $this->productRepository->getList($searchCriteria);
         $productDataArray = [];
 
         foreach ($productList->getItems() as $product) {
+            $product->setStoreId($storeId);
             $typeInstance = $product->getTypeInstance();
 
             // Get the stock information using StockRegistryInterface
