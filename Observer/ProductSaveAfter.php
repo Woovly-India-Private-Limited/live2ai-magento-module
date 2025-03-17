@@ -104,7 +104,7 @@ class ProductSaveAfter implements ObserverInterface  {
                 'baseUrl' => $storeDetails[ 'baseUrlMedia' ].'catalog/product',
                 'products' => $productData
             ];
-            $url = $live2Details[ 'live2_url' ].'/api/live2/stores/magento';
+            $url = $live2Details[ 'live2_url' ].'/api/live2-public/stores/magento';
             $token = $live2Details[ 'token' ];
 
             $ch = curl_init( $url );

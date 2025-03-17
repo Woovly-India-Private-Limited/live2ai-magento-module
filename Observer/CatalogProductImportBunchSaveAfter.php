@@ -140,7 +140,7 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
 
     protected function uploadFileToApi($url,$jsonFile, $token)
     {
-        $url = $url.'/api/live2/file-upload/magento';
+        $url = $url.'/api/live2-public/file-upload/magento';
         $headers = [
             'Authorization: ' . $token,
         ];
@@ -161,7 +161,7 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
 
     protected function updateBulkData($url,$response, $token)
     {
-        $apiUrl = $url.'/api/live2/stores/magento/bulk-update';
+        $apiUrl = $url.'/api/live2-public/stores/magento/bulk-update';
         $headers = [
             'Content-Type: application/json',
             'Authorization: ' . $token,

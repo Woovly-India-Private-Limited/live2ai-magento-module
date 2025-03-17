@@ -198,7 +198,7 @@ class ProductSyncCommand extends Command
 
     protected function uploadFileToApi($url,$jsonFile, $token)
     {
-        $url = $url.'/api/live2/file-upload/magento';
+        $url = $url.'/api/live2-public/file-upload/magento';
         $headers = ['Authorization: ' . $token];
         $postData = ['file' => new \CURLFile(BP . '/' . $jsonFile, 'application/json')];
 
@@ -207,7 +207,7 @@ class ProductSyncCommand extends Command
 
     protected function updateBulkData($apiUrl,$data, $token)
     {
-        $apiUrl = $apiUrl.'/api/live2/stores/magento/bulk-update';
+        $apiUrl = $apiUrl.'/api/live2-public/stores/magento/bulk-update';
         $headers = ['Content-Type: application/json', 'Authorization: ' . $token];
 
         return $this->sendRequest($apiUrl, $headers, json_encode($data));
@@ -215,7 +215,7 @@ class ProductSyncCommand extends Command
 
     protected function updateBulkCollectionData($apiUrl,$data, $token)
     {
-        $apiUrl = $apiUrl.'/api/live2/stores/magento/collection';
+        $apiUrl = $apiUrl.'/api/live2-public/stores/magento/collection';
         $headers = ['Content-Type: application/json', 'Authorization: ' . $token];
 
         return $this->sendRequest($apiUrl, $headers, json_encode($data));
@@ -243,7 +243,7 @@ class ProductSyncCommand extends Command
 
     protected function uploadCategoryFileToApi($url,$token)
     {
-        $url = $url.'/api/live2/file-upload/magento';
+        $url = $url.'/api/live2-public/file-upload/magento';
         $headers = ['Authorization: ' . $token];
         $postData = ['file' => new \CURLFile(BP . '/var/categories.json', 'application/json')];
 
@@ -252,7 +252,7 @@ class ProductSyncCommand extends Command
 
     protected function createStore($url,$token, $storeDetails)
     {
-        $url = $url.'/api/live2/stores/magento';
+        $url = $url.'/api/live2-public/stores/magento';
         $headers = ['Authorization: ' . $token];
         $postData = [
             'shopName' => $storeDetails['name'],
