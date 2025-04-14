@@ -86,6 +86,18 @@ class ProductSaveAfter implements ObserverInterface  {
                         $variant = $childProduct->getData();
                         $variant['quantity_and_stock_status'] = $childIsInStock && $childStockQty ? true : false;
 
+                        $variantAttributes = [];
+                        foreach ($attribute as $attr) {
+                            $attrCode = $attr['attribute_code'];
+                            $optionValue = $childProduct->getAttributeText($attrCode);
+                        
+                            $variantAttributes[] = [
+                                'key' => $attrCode,
+                                'value' => $optionValue
+                            ];
+                        }
+                        $variant['attributes'] = $variantAttributes;
+
                         $variants[] = $variant;
                     }
                     $productData['price'] = $price;
