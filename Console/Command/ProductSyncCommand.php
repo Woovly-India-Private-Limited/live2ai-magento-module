@@ -12,6 +12,7 @@ use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Psr\Log\LoggerInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\CatalogInventory\Api\StockRegistryInterface;
 
 class ProductSyncCommand extends Command
 {
@@ -53,6 +54,7 @@ class ProductSyncCommand extends Command
             $storeManager = $objectManager->get(StoreManagerInterface::class);
             $productRepository = $objectManager->get(ProductRepositoryInterface::class);
             $searchCriteriaBuilder = $objectManager->get(SearchCriteriaBuilder::class);
+            $stockRegistry = $objectManager->get(StockRegistryInterface::class);
 
 
             $live2Details=$this->live2Api->getAccessToken();
@@ -65,6 +67,13 @@ class ProductSyncCommand extends Command
             $storeId = $storeManager->getStore()->getId();
             $baseUrlMedia = $storeDetails['baseUrlMedia'];
             $storeUrl = $storeDetails['storeUrl'];
+            $allowedCurrencies = $storeDetails['allowedCurrencies'];
+            $output->writeln($storeUrl . " " . $baseUrlMedia . " " . $storeId);
+
+
+            $createdStore = $this->createStore($url, $token, $storeDetails) ?? 'welcome';
+            $output->writeln($createdStore);
+
 
             // Code to save category data and upload it to API
             $categoryData = $this->fetchCategoryData($objectManager, $storeUrl, $baseUrlMedia);
@@ -74,23 +83,32 @@ class ProductSyncCommand extends Command
             $responseCat=json_decode($responseCat, true);
             $responseCat['shopUrl'] = $storeUrl;
             $data=$responseCat;
-            $this->updateBulkCollectionData($url,$responseCat, $token);
+            $collectionUpdate  = $this->updateBulkCollectionData($url,$responseCat, $token) ?? "";
 
             $output->writeln('Product data Sync to Live2 Donedfbafbsf'.json_encode($responseCat));
 
+            $output->writeln($collectionUpdate);
             // Code to save product data and upload it to API
-            $productDataArray = $this->fetchProductData($searchCriteriaBuilder, $productRepository);
+            $productDataArray = $this->fetchProductData($searchCriteriaBuilder, $productRepository, $stockRegistry, $allowedCurrencies);
             $jsonFile = 'var/product_live2.json';
             $this->saveDataToJsonFile($jsonFile, $productDataArray, $storeUrl, $baseUrlMedia);
 
             $response = $this->uploadFileToApi($url,$jsonFile, $token);
             $this->logger->info('outputDataLIVE2' . json_encode($response));
 
+            $responses = json_decode($response, true);
+
+            $output->writeln($responses['data']['url']);
+
             $response = json_decode($response, true);
             $response['shopUrl'] = $storeUrl;
             $data = $response;
 
-            $this->updateBulkData($url,$response, $token);
+            $output->writeln('response is' . json_encode($response));
+
+            $updateProductData = $this->updateBulkData($url,$response, $token) ?? "world";
+            $output->writeln($updateProductData);
+
 
             // // Code to save category data and upload it to API
             // $categoryData = $this->fetchCategoryData($objectManager, $storeUrl, $baseUrlMedia);
@@ -100,19 +118,105 @@ class ProductSyncCommand extends Command
             // $responseCa["shopUrl"]=$storeUrl;
             // $this->updateBulkCollectionData($url,$data, $token);
             $output->writeln('Product data Sync to Live2 Done');
+
+            return self::SUCCESS;
         } catch (\Throwable $e) {
             $this->logger->critical('outputDataLIVE2' . json_encode($e->getMessage()));
             $output->writeln('Error: ' . $e->getMessage());
+
+            return self::FAILURE;
         }
     }
 
-    protected function fetchProductData($searchCriteriaBuilder, $productRepository)
+    protected function fetchProductData($searchCriteriaBuilder, $productRepository, $stockRegistry, $allowedCurrencies)
     {
-        $searchCriteria = $searchCriteriaBuilder->setPageSize(600)->create();
+        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+        $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+        $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
+        $store = $storeManager->getDefaultStoreView();
+        $storeId = $store->getId();
+        $baseCurrency = $store->getBaseCurrency();
+
+        // Set the store filter using addFilter
+        $searchCriteriaBuilder->addFilter('store_id', $storeId, 'eq'); // Filter by store ID
+
+        $searchCriteria = $searchCriteriaBuilder->create();
         $productList = $productRepository->getList($searchCriteria);
         $productDataArray = [];
         foreach ($productList->getItems() as $product) {
-            $productDataArray[] = $product->getData();
+            $product->setStoreId($storeId);
+            $typeInstance = $product->getTypeInstance();
+            // $this->logger->info("product details are ", ['response' => $product->getData()]);
+
+             // Get the stock information using StockRegistryInterface
+            $stockItem = $stockRegistry->getStockItemBySku($product->getSku());
+            $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
+            $stockQty = $stockItem->getQty() > 0 ? true : false;
+        
+            $productData = $product->getData();
+            $productData['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
+            
+
+            $variants = [];
+            $attribute = [];
+            $price = 0;
+
+            // Check if the product is configurable
+            if ($product->getTypeId() === 'configurable') {
+                $childProducts = $configurableProductModel->getUsedProducts($product);
+            
+                $attribute = $typeInstance->getConfigurableAttributesAsArray($product);
+
+                $price = 0;
+
+                foreach ($childProducts as $childProduct) {
+                    $childStockItem = $stockRegistry->getStockItemBySku($childProduct->getSku());
+                    $childIsInStock = $childStockItem->getIsInStock();
+                    $childStockQty = $childStockItem->getQty() > 0 ? true : false;
+
+                    $price = $price !== 0 ? $price : $childProduct->getPrice();
+
+                    $variant = $childProduct->getData();
+                    $variant['quantity_and_stock_status'] = $childIsInStock && $childStockQty ? true : false;
+
+                    $variantAttributes = [];
+                    foreach ($attribute as $attr) {
+                        $attrCode = $attr['attribute_code'];
+                        $optionValue = $childProduct->getAttributeText($attrCode);
+                    
+                        $variantAttributes[] = [
+                            'key' => $attrCode,
+                            'value' => $optionValue
+                        ];
+                    }
+
+                    // 🆕 Add price conversions per currency
+                    $convertedPrices = [];
+                    foreach ($allowedCurrencies as $currencyCode) {
+                        $convertedPrices[$currencyCode] = $baseCurrency->convert($childProduct->getPrice(), $currencyCode);
+                    }
+
+                    $variant['attributes'] = $variantAttributes;
+                    $variant['prices'] = $convertedPrices;
+                    
+                    $variants[] = $variant;
+                }
+
+                // 🆕 Product-level price conversions
+                $productData['price'] = $price;
+            }
+            $finalPrice = $price !== 0 ? $price : $product->getPrice();
+            $convertedProductPrices = [];
+            foreach ($allowedCurrencies as $currencyCode) {
+                $convertedProductPrices[$currencyCode] = $baseCurrency->convert($finalPrice, $currencyCode);
+            }
+            $productData['prices'] = $convertedProductPrices;
+
+            $productData['variants'] = $variants;
+            $productData['options'] = $attribute;
+
+            $productDataArray[] = $productData;
+
         }
         return $productDataArray;
     }
@@ -129,7 +233,7 @@ class ProductSyncCommand extends Command
 
     protected function uploadFileToApi($url,$jsonFile, $token)
     {
-        $url = $url.'/api/live2/file-upload/magento';
+        $url = $url.'/api/live2-public/file-upload/magento';
         $headers = ['Authorization: ' . $token];
         $postData = ['file' => new \CURLFile(BP . '/' . $jsonFile, 'application/json')];
 
@@ -138,18 +242,18 @@ class ProductSyncCommand extends Command
 
     protected function updateBulkData($apiUrl,$data, $token)
     {
-        $apiUrl = $apiUrl.'/api/live2/stores/magento/bulk-update';
+        $apiUrl = $apiUrl.'/api/live2-public/stores/magento/bulk-update';
         $headers = ['Content-Type: application/json', 'Authorization: ' . $token];
 
-        $this->sendRequest($apiUrl, $headers, json_encode($data));
+        return $this->sendRequest($apiUrl, $headers, json_encode($data));
     }
 
     protected function updateBulkCollectionData($apiUrl,$data, $token)
     {
-        $apiUrl = $apiUrl.'/api/live2/stores/magento/collection';
+        $apiUrl = $apiUrl.'/api/live2-public/stores/magento/collection';
         $headers = ['Content-Type: application/json', 'Authorization: ' . $token];
 
-        $this->sendRequest($apiUrl, $headers, json_encode($data));
+        return $this->sendRequest($apiUrl, $headers, json_encode($data));
     }
 
     protected function fetchCategoryData($objectManager, $storeUrl, $baseUrlMedia)
@@ -174,11 +278,27 @@ class ProductSyncCommand extends Command
 
     protected function uploadCategoryFileToApi($url,$token)
     {
-        $url = $url.'/api/live2/file-upload/magento';
+        $url = $url.'/api/live2-public/file-upload/magento';
         $headers = ['Authorization: ' . $token];
         $postData = ['file' => new \CURLFile(BP . '/var/categories.json', 'application/json')];
 
         return $this->sendRequest($url, $headers, $postData);
+    }
+
+    protected function createStore($url,$token, $storeDetails)
+    {
+        $url = $url.'/api/live2-public/stores/magento';
+        $headers = ['Authorization: ' . $token];
+        $postData = [
+            'shopName' => $storeDetails['name'],
+            'currency' => $storeDetails['currency'],
+            'shopUrl' => $storeDetails['storeUrl'],
+        ];
+
+        $this->logger->info($url . " " . json_encode($headers) . " " . json_encode($postData));
+
+
+        return $this->sendRequest($url, $headers, json_encode($postData));
     }
 
     protected function sendRequest($url, $headers, $postData)

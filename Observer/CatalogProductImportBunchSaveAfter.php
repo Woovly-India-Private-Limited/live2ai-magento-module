@@ -9,6 +9,7 @@ use Psr\Log\LoggerInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
+use Magento\CatalogInventory\Api\StockRegistryInterface;
 
 class CatalogProductImportBunchSaveAfter implements ObserverInterface
 {
@@ -17,19 +18,22 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
     protected $productRepository;
     protected $searchCriteriaBuilder;
     protected $live2Api;
+    protected $stockRegistry;
 
     public function __construct(
         LoggerInterface $logger,
         StoreManagerInterface $storeManager,
         ProductRepositoryInterface $productRepository,
         SearchCriteriaBuilder $searchCriteriaBuilder,
-        Live2ApiCall $live2Api
+        Live2ApiCall $live2Api,
+        StockRegistryInterface $stockRegistry
     ) {
         $this->logger = $logger;
         $this->storeManager = $storeManager;
         $this->productRepository = $productRepository;
         $this->searchCriteriaBuilder = $searchCriteriaBuilder;
         $this->live2Api=$live2Api;
+        $this->stockRegistry = $stockRegistry;
     }
 
     public function execute(Observer $observer)
@@ -45,7 +49,8 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
             $storeDetails=$this->live2Api->getStoreDetails();
             $url=$live2Details['live2_url'];
             $access_token=$live2Details['token'];
-            $productDataArray = $this->fetchProductData($SKUs);
+            $allowedCurrencies = $storeDetails['allowedCurrencies'];
+            $productDataArray = $this->fetchProductData($SKUs, $allowedCurrencies);
             $data = [
                 'product' => $productDataArray,
                 'image_url' => $storeDetails['storeUrl'],
@@ -77,21 +82,94 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
         return $SKUs;
     }
 
-    protected function fetchProductData($SKUs)
+    protected function fetchProductData($SKUs, $allowedCurrencies)
     {
-        $searchCriteria = $this->searchCriteriaBuilder->setPageSize(5)->addFilter('sku', $SKUs, 'in')->create();
+
+        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+        $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+        $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
+        $store = $storeManager->getDefaultStoreView();
+        $storeId = $store->getId();
+        $baseCurrency = $store->getBaseCurrency();
+
+        $searchCriteria = $this->searchCriteriaBuilder->addFilter('sku', $SKUs, 'in')->addFilter('store_id', $storeId, 'eq')->create();
         $productList = $this->productRepository->getList($searchCriteria);
         $productDataArray = [];
 
         foreach ($productList->getItems() as $product) {
-            $productDataArray[] = $product->getData();
+            $product->setStoreId($storeId);
+            $typeInstance = $product->getTypeInstance();
+
+            // Get the stock information using StockRegistryInterface
+            $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
+            $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
+            $stockQty = $stockItem->getQty() > 0 ? true : false;
+        
+            $productData = $product->getData();
+            $productData['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
+            
+            $variants = [];
+            $attribute = [];
+            $price = 0;
+            
+            // Check if the product is configurable
+            if ($product->getTypeId() === 'configurable') {
+                $childProducts = $configurableProductModel->getUsedProducts($product);
+            
+                $attribute = $typeInstance->getConfigurableAttributesAsArray($product);
+
+                $price = 0;
+
+                foreach ($childProducts as $childProduct) {
+                    $childStockItem = $this->stockRegistry->getStockItemBySku($childProduct->getSku());
+                    $childIsInStock = $childStockItem->getIsInStock();
+                    $childStockQty = $childStockItem->getQty() > 0 ? true : false;
+
+                    $price = $price !== 0 ? $price : $childProduct->getPrice();
+
+                    $variant = $childProduct->getData();
+                    $variant['quantity_and_stock_status'] = $childIsInStock && $childStockQty ? true : false;
+
+                    $variantAttributes = [];
+                    foreach ($attribute as $attr) {
+                        $attrCode = $attr['attribute_code'];
+                        $optionValue = $childProduct->getAttributeText($attrCode);
+                    
+                        $variantAttributes[] = [
+                            'key' => $attrCode,
+                            'value' => $optionValue
+                        ];
+                    }
+
+                    $convertedPrices = [];
+                    foreach ($allowedCurrencies as $currencyCode) {
+                        $convertedPrices[$currencyCode] = $baseCurrency->convert($childProduct->getPrice(), $currencyCode);
+                    }
+
+                    $variant['attributes'] = $variantAttributes;
+                    $variant['prices'] = $convertedPrices;
+                    $variants[] = $variant;
+                }
+                $productData['price'] = $price;
+            }
+            $finalPrice = $price !== 0 ? $price : $product->getPrice();
+            $convertedProductPrices = [];
+            foreach ($allowedCurrencies as $currencyCode) {
+                $convertedProductPrices[$currencyCode] = $baseCurrency->convert($finalPrice, $currencyCode);
+            }
+            $productData['prices'] = $convertedProductPrices;
+
+            $productData['variants'] = $variants;
+            $productData['options'] = $attribute;
+
+            $productDataArray[] = $productData;
         }
         return $productDataArray;
     }
 
     protected function uploadFileToApi($url,$jsonFile, $token)
     {
-        $url = $url.'/api/live2/file-upload/magento';
+        $url = $url.'/api/live2-public/file-upload/magento';
         $headers = [
             'Authorization: ' . $token,
         ];
@@ -112,7 +190,7 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
 
     protected function updateBulkData($url,$response, $token)
     {
-        $apiUrl = $url.'/api/live2/stores/magento/bulk-update';
+        $apiUrl = $url.'/api/live2-public/stores/magento/bulk-update';
         $headers = [
             'Content-Type: application/json',
             'Authorization: ' . $token,

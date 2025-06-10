@@ -8,6 +8,7 @@ use Magento\Framework\Api\SearchCriteriaInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Store\Model\StoreManagerInterface;
+use Magento\CatalogInventory\Api\StockRegistryInterface;
 
 class Product implements ProductInterface
 {
@@ -16,23 +17,35 @@ class Product implements ProductInterface
     protected $storeManager;
     protected $scopeConfig;
     protected $live2Api;
+    protected $stockRegistry;
 
     public function __construct(
         ProductRepositoryInterface $productRepository,
         RequestInterface $request,
         StoreManagerInterface $storeManager,
         ScopeConfigInterface $scopeConfig,
-        Live2ApiCall $live2Api
+        Live2ApiCall $live2Api,
+        StockRegistryInterface $stockRegistry
+        
     ) {
         $this->productRepository = $productRepository;
         $this->request = $request;
         $this->storeManager = $storeManager;
         $this->scopeConfig = $scopeConfig;
         $this->live2Api=$live2Api;
+        $this->stockRegistry = $stockRegistry;
     }
 
     public function getProducts(SearchCriteriaInterface $searchCriteria)
     {
+        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+        $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
+
+        // Get the default store ID using the StoreManager
+        $storeId = $this->storeManager->getStore()->getId(); // Get the current store ID
+
+        $searchCriteria->addFilter('store_id', $storeId, 'eq'); // Filter products by store ID
+
         $headers = $this->request->getHeader("Authorization");
         $baseUrlMedia = $this->storeManager->getStore()->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_MEDIA);
         $storeUrl = $this->storeManager->getStore()->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_WEB);
@@ -42,14 +55,67 @@ class Product implements ProductInterface
         $storeDetails=$this->live2Api->getStoreDetails();
         $productDataArray = [];
         foreach ($products->getItems() as $product) {
-            $productDataArray[] = $product->getData();
+            $typeInstance = $product->getTypeInstance();
+
+            // Get the stock information using StockRegistryInterface
+            $stockItem = $this->stockRegistry->getStockItemBySku($product->getSku());
+            $isInStock = $stockItem->getIsInStock(); // Check if the product is in stock
+            $stockQty = $stockItem->getQty() > 0 ? true : false;
+
+            $productData = $product->getData();
+            $productData['quantity_and_stock_status'] = $isInStock && $stockQty ? true : false;
+
+
+            $variants = [];
+            $attribute = [];
+            // Check if the product is configurable
+            if ($product->getTypeId() === 'configurable') {
+                $childProducts = $configurableProductModel->getUsedProducts($product);
+            
+                $attribute = $typeInstance->getConfigurableAttributesAsArray($product);
+
+                $price = 0;
+
+                foreach ($childProducts as $childProduct) {
+                    $childStockItem = $this->stockRegistry->getStockItemBySku($childProduct->getSku());
+                    $childIsInStock = $childStockItem->getIsInStock();
+                    $childStockQty = $childStockItem->getQty() > 0 ? true : false;
+
+                    $price = $price !== 0 ? $price : $childProduct->getPrice();
+
+                    $variant = $childProduct->getData();
+                    $variant['quantity_and_stock_status'] = $childIsInStock && $childStockQty ? true : false;
+
+                    $variantAttributes = [];
+                    foreach ($attribute as $attr) {
+                        $attrCode = $attr['attribute_code'];
+                        $optionValue = $childProduct->getAttributeText($attrCode);
+                    
+                        $variantAttributes[] = [
+                            'key' => $attrCode,
+                            'value' => $optionValue
+                        ];
+                    }
+                    $variant['attributes'] = $variantAttributes;
+
+                    $variants[] = $variant;
+                }
+                $productData['price'] = $price;
+            }
+
+            $productData['variants'] = $variants;
+            $productData['options'] = $attribute;
+
+            $productDataArray[] = $productData;
         }
         
         $result = [
             [
                 "products" => $productDataArray,
                 "store_url" => $storeDetails['storeUrl'],
-                "image_url" => $storeDetails['baseUrlMedia'].'catalog/product'
+                'currency' => $storeDetails['currency'],
+                "image_url" => $storeDetails['baseUrlMedia'].'catalog/product',
+                'shopName' => $storeDetails[ 'name' ],
             ]
         ];
         return $result;

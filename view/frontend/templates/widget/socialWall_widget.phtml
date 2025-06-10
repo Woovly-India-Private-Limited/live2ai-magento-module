@@ -4,11 +4,12 @@
     $currentCurrency = $storeManager->getStore()->getCurrentCurrencyCode();
 ?>
 <div
-  data-live2-embed="1"
-  data-live2-picked-up="0"
-  data-live2-loaded="0"
-  data-live2-embed-id="<?php echo $block->getData('embed_id'); ?>"
-  data-live2-team-id="65b8e3a8885468de58b7c862"
+  data-live2-social-wall-embed="1"
+  data-live2-social-wall-picked-up="0"
+  data-live2-social-wall-loaded="0"
+  data-live2-social-wall-embed-id="<?php echo $block->getData('embed_id'); ?>"
+  data-live2-social-wall-team-id="6618d9932fa8618399f3d956"
+  data-live2-product="socialwall"
   data-live2-selected-currency="<?php echo $currentCurrency; ?>"
 >
   <div class="live2-container"></div>
@@ -16,4 +17,5 @@
 </div>
 
 
-<script src="https://storage.googleapis.com/uploads-live2ai-dev/assets/sdk/dev/live2ai-embed-sdk.js?v=3"></script>
+
+<script src="https://storage.googleapis.com/assets-live2ai-prod/assets/social-wall-sdk/latest/live2ai-embed-sdk.js?v=164"></script>
