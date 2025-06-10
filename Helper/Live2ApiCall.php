@@ -58,6 +58,9 @@ class Live2ApiCall
         // Get store's currency
         $storeCurrency = $store->getBaseCurrencyCode();
 
+        $allowedCurrencies = $store->getAvailableCurrencyCodes();
+
+
         $this->logger->info('hello world store manager details', [
             'baseUrlMedia' => $baseUrlMedia,
             'storeUrl' => $storeUrl,
@@ -65,8 +68,8 @@ class Live2ApiCall
             'code' => $storeCode,
             'locale' => $storeLocale,
             'currency' => $storeCurrency,
-            'timezone' => $storeTimezone
-
+            'timezone' => $storeTimezone,
+            'allowedCurrencies' => $allowedCurrencies
         ]);
 
         $result = [
@@ -74,6 +77,7 @@ class Live2ApiCall
             'storeUrl' => $storeUrl,
             'name' => $storeName,
             'currency' => $storeCurrency,
+            'allowedCurrencies' => $allowedCurrencies
         ];
         // $result['baseUrlMedia']=$baseUrlMedia;
         // $result['storeUrl']=$storeUrl;

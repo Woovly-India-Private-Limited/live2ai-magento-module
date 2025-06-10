@@ -42,8 +42,9 @@ class ProductSaveAfter implements ObserverInterface  {
             $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
             $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
             $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
-            $storeId = $storeManager->getDefaultStoreView()->getId(); // Get the default store ID
-
+            $store = $storeManager->getDefaultStoreView();
+            $storeId = $store->getId();
+            $baseCurrency = $store->getBaseCurrency();
 
             $product = $observer->getEvent()->getProduct();
             $storeId = $this->storeManager->getStore()->getId();
@@ -51,6 +52,7 @@ class ProductSaveAfter implements ObserverInterface  {
             $storeUrl = $this->storeManager->getStore( $storeId )->getBaseUrl( \Magento\Framework\UrlInterface::URL_TYPE_WEB );
             $live2Details = $this->live2Api->getAccessToken();
             $storeDetails = $this->live2Api->getStoreDetails();
+            $allowedCurrencies = $storeDetails['allowedCurrencies'];
             $this->logger->info( 'outputDataLIVE2' . json_encode( $storeDetails ) );
             $searchCriteria = $this->searchCriteriaBuilder->addFilter( 'sku', [ $product->getSku() ], 'in' )->addFilter('store_id', $storeId, 'eq')->create();
             $productList = $this->productRepository->getList( $searchCriteria );
@@ -68,6 +70,8 @@ class ProductSaveAfter implements ObserverInterface  {
 
                 $variants = [];
                 $attribute = [];
+                $price = 0;
+                
                 // Check if the product is configurable
                 if ($product->getTypeId() === 'configurable') {
                     $childProducts = $configurableProductModel->getUsedProducts($product);
@@ -96,12 +100,25 @@ class ProductSaveAfter implements ObserverInterface  {
                                 'value' => $optionValue
                             ];
                         }
-                        $variant['attributes'] = $variantAttributes;
 
+                        $convertedPrices = [];
+                        foreach ($allowedCurrencies as $currencyCode) {
+                            $convertedPrices[$currencyCode] = $baseCurrency->convert($childProduct->getPrice(), $currencyCode);
+                        }
+
+                        $variant['attributes'] = $variantAttributes;
+                        $variant['prices'] = $convertedPrices;
                         $variants[] = $variant;
                     }
-                    $productData['price'] = $price;
+                    $products['price'] = $price;
                 }
+
+                $finalPrice = $price !== 0 ? $price : $product->getPrice();
+                $convertedProductPrices = [];
+                foreach ($allowedCurrencies as $currencyCode) {
+                    $convertedProductPrices[$currencyCode] = $baseCurrency->convert($finalPrice, $currencyCode);
+                }
+                $products['prices'] = $convertedProductPrices;
 
                 $products['variants'] = $variants;
                 $products['options'] = $attribute;
@@ -110,7 +127,7 @@ class ProductSaveAfter implements ObserverInterface  {
             }
             $productDataArray = [
                 'shopUrl' => $storeDetails[ 'storeUrl' ],
-                'currency' => '',
+                'currency' => $storeDetails['currency'],
                 'desc' => '',
                 'shopName' => $storeDetails[ 'name' ],
                 'baseUrl' => $storeDetails[ 'baseUrlMedia' ].'catalog/product',

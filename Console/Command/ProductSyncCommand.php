@@ -67,6 +67,9 @@ class ProductSyncCommand extends Command
             $storeId = $storeManager->getStore()->getId();
             $baseUrlMedia = $storeDetails['baseUrlMedia'];
             $storeUrl = $storeDetails['storeUrl'];
+            $allowedCurrencies = $storeDetails['allowedCurrencies'];
+            $output->writeln($storeUrl . " " . $baseUrlMedia . " " . $storeId);
+
 
             $createdStore = $this->createStore($url, $token, $storeDetails) ?? 'welcome';
             $output->writeln($createdStore);
@@ -86,7 +89,7 @@ class ProductSyncCommand extends Command
 
             $output->writeln($collectionUpdate);
             // Code to save product data and upload it to API
-            $productDataArray = $this->fetchProductData($searchCriteriaBuilder, $productRepository, $stockRegistry);
+            $productDataArray = $this->fetchProductData($searchCriteriaBuilder, $productRepository, $stockRegistry, $allowedCurrencies);
             $jsonFile = 'var/product_live2.json';
             $this->saveDataToJsonFile($jsonFile, $productDataArray, $storeUrl, $baseUrlMedia);
 
@@ -125,12 +128,14 @@ class ProductSyncCommand extends Command
         }
     }
 
-    protected function fetchProductData($searchCriteriaBuilder, $productRepository, $stockRegistry)
+    protected function fetchProductData($searchCriteriaBuilder, $productRepository, $stockRegistry, $allowedCurrencies)
     {
         $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
         $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
         $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
-        $storeId = $storeManager->getDefaultStoreView()->getId(); // Get the default store ID
+        $store = $storeManager->getDefaultStoreView();
+        $storeId = $store->getId();
+        $baseCurrency = $store->getBaseCurrency();
 
         // Set the store filter using addFilter
         $searchCriteriaBuilder->addFilter('store_id', $storeId, 'eq'); // Filter by store ID
@@ -141,7 +146,7 @@ class ProductSyncCommand extends Command
         foreach ($productList->getItems() as $product) {
             $product->setStoreId($storeId);
             $typeInstance = $product->getTypeInstance();
-            $this->logger->info("product details are ", ['response' => $product->getData()]);
+            // $this->logger->info("product details are ", ['response' => $product->getData()]);
 
              // Get the stock information using StockRegistryInterface
             $stockItem = $stockRegistry->getStockItemBySku($product->getSku());
@@ -154,6 +159,8 @@ class ProductSyncCommand extends Command
 
             $variants = [];
             $attribute = [];
+            $price = 0;
+
             // Check if the product is configurable
             if ($product->getTypeId() === 'configurable') {
                 $childProducts = $configurableProductModel->getUsedProducts($product);
@@ -182,12 +189,28 @@ class ProductSyncCommand extends Command
                             'value' => $optionValue
                         ];
                     }
-                    $variant['attributes'] = $variantAttributes;
 
+                    // 🆕 Add price conversions per currency
+                    $convertedPrices = [];
+                    foreach ($allowedCurrencies as $currencyCode) {
+                        $convertedPrices[$currencyCode] = $baseCurrency->convert($childProduct->getPrice(), $currencyCode);
+                    }
+
+                    $variant['attributes'] = $variantAttributes;
+                    $variant['prices'] = $convertedPrices;
+                    
                     $variants[] = $variant;
                 }
+
+                // 🆕 Product-level price conversions
                 $productData['price'] = $price;
             }
+            $finalPrice = $price !== 0 ? $price : $product->getPrice();
+            $convertedProductPrices = [];
+            foreach ($allowedCurrencies as $currencyCode) {
+                $convertedProductPrices[$currencyCode] = $baseCurrency->convert($finalPrice, $currencyCode);
+            }
+            $productData['prices'] = $convertedProductPrices;
 
             $productData['variants'] = $variants;
             $productData['options'] = $attribute;

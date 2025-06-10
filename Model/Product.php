@@ -113,7 +113,9 @@ class Product implements ProductInterface
             [
                 "products" => $productDataArray,
                 "store_url" => $storeDetails['storeUrl'],
-                "image_url" => $storeDetails['baseUrlMedia'].'catalog/product'
+                'currency' => $storeDetails['currency'],
+                "image_url" => $storeDetails['baseUrlMedia'].'catalog/product',
+                'shopName' => $storeDetails[ 'name' ],
             ]
         ];
         return $result;

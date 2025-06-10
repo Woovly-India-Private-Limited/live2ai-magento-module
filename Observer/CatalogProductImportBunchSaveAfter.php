@@ -49,7 +49,8 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
             $storeDetails=$this->live2Api->getStoreDetails();
             $url=$live2Details['live2_url'];
             $access_token=$live2Details['token'];
-            $productDataArray = $this->fetchProductData($SKUs);
+            $allowedCurrencies = $storeDetails['allowedCurrencies'];
+            $productDataArray = $this->fetchProductData($SKUs, $allowedCurrencies);
             $data = [
                 'product' => $productDataArray,
                 'image_url' => $storeDetails['storeUrl'],
@@ -81,13 +82,15 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
         return $SKUs;
     }
 
-    protected function fetchProductData($SKUs)
+    protected function fetchProductData($SKUs, $allowedCurrencies)
     {
 
         $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
         $configurableProductModel = $objectManager->get(\Magento\ConfigurableProduct\Model\Product\Type\Configurable::class);
         $storeManager = $objectManager->get(\Magento\Store\Model\StoreManagerInterface::class);
-        $storeId = $storeManager->getDefaultStoreView()->getId(); // Get the default store ID
+        $store = $storeManager->getDefaultStoreView();
+        $storeId = $store->getId();
+        $baseCurrency = $store->getBaseCurrency();
 
         $searchCriteria = $this->searchCriteriaBuilder->addFilter('sku', $SKUs, 'in')->addFilter('store_id', $storeId, 'eq')->create();
         $productList = $this->productRepository->getList($searchCriteria);
@@ -107,6 +110,8 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
             
             $variants = [];
             $attribute = [];
+            $price = 0;
+            
             // Check if the product is configurable
             if ($product->getTypeId() === 'configurable') {
                 $childProducts = $configurableProductModel->getUsedProducts($product);
@@ -135,12 +140,24 @@ class CatalogProductImportBunchSaveAfter implements ObserverInterface
                             'value' => $optionValue
                         ];
                     }
-                    $variant['attributes'] = $variantAttributes;
 
+                    $convertedPrices = [];
+                    foreach ($allowedCurrencies as $currencyCode) {
+                        $convertedPrices[$currencyCode] = $baseCurrency->convert($childProduct->getPrice(), $currencyCode);
+                    }
+
+                    $variant['attributes'] = $variantAttributes;
+                    $variant['prices'] = $convertedPrices;
                     $variants[] = $variant;
                 }
                 $productData['price'] = $price;
             }
+            $finalPrice = $price !== 0 ? $price : $product->getPrice();
+            $convertedProductPrices = [];
+            foreach ($allowedCurrencies as $currencyCode) {
+                $convertedProductPrices[$currencyCode] = $baseCurrency->convert($finalPrice, $currencyCode);
+            }
+            $productData['prices'] = $convertedProductPrices;
 
             $productData['variants'] = $variants;
             $productData['options'] = $attribute;
